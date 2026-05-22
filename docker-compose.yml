@@ -28,6 +28,23 @@ volumes:
 services:
 
   # ----------------------------------------------------------
+  # Spark Data Volume Init
+  # spark-data / spark-events named volume 의 디렉토리 권한을 777로 설정해서
+  # spark user(UID 1000)인 driver/executor 가 Parquet write 및
+  # EventLog write 가능하도록 한다.
+  # 한 번 실행 후 종료되는 단발 init 컨테이너.
+  # ----------------------------------------------------------
+  spark-data-init:
+    image: bitnamilegacy/spark:3.5
+    container_name: spark-data-init
+    user: "0"
+    command: sh -c "chmod -R 777 /opt/bitnami/spark/data && chmod -R 777 /opt/bitnami/spark/spark-events"
+    volumes:
+      - spark-data:/opt/bitnami/spark/data
+      - spark-events:/opt/bitnami/spark/spark-events
+    restart: "no"
+
+  # ----------------------------------------------------------
   # Spark Master
   # ----------------------------------------------------------
   spark-master:
@@ -56,6 +73,9 @@ services:
       - spark-events:/opt/bitnami/spark/spark-events  # 이벤트 로그 공유 (history server와 동일 경로)
     networks:
       - spark-net
+    depends_on:
+      spark-data-init:
+        condition: service_completed_successfully
     restart: unless-stopped         # Docker 재시작 시 자동으로 컨테이너도 재시작
 
   # ----------------------------------------------------------
@@ -86,7 +106,10 @@ services:
     networks:
       - spark-net
     depends_on:
-      - spark-master                # master가 먼저 뜬 후 worker가 등록
+      spark-master:
+        condition: service_started  # master가 먼저 뜬 후 worker가 등록
+      spark-data-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   # ----------------------------------------------------------
@@ -116,7 +139,10 @@ services:
     networks:
       - spark-net
     depends_on:
-      - spark-master
+      spark-master:
+        condition: service_started
+      spark-data-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   # ----------------------------------------------------------
